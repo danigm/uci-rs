@@ -17,7 +17,8 @@ pub use error::{Result, EngineError};
 pub struct Engine {
     engine: RefCell<Child>,
 
-    movetime: u32
+    movetime: u32,
+    depth: Option<u32>,
 }
 
 const DEFAULT_TIME: u32 = 100;
@@ -43,7 +44,8 @@ impl Engine {
 
         let res = Engine {
             engine: RefCell::new(cmd),
-            movetime: DEFAULT_TIME
+            movetime: DEFAULT_TIME,
+            depth: None,
         };
 
         res.read_line()?;
@@ -51,7 +53,7 @@ impl Engine {
 
         Ok(res)
     }
-    
+
     /// Changes the amount of time the engine spends looking for a move
     ///
     /// # Arguments
@@ -61,7 +63,17 @@ impl Engine {
         self.movetime = new_movetime;
         self
     }
-    
+
+    /// Changes the the engine depth when looking for a move
+    ///
+    /// # Arguments
+    ///
+    /// * `new_depth` - New depth, as an Option
+    pub fn depth(mut self, new_depth: Option<u32>) -> Engine {
+        self.depth = new_depth;
+        self
+    }
+
     /// Asks the engine to play the given moves from the initial position on it's internal board.
     /// 
     /// # Arguments
@@ -105,7 +117,12 @@ impl Engine {
     
     /// Returns the best move in the current position according to the engine
     pub fn bestmove(&self) -> Result<String> {
-        self.write_fmt(format_args!("go movetime {}\n", self.movetime))?;
+        let movetime = self.movetime;
+        if let Some(depth) = self.depth {
+            self.write_fmt(format_args!("go movetime {movetime} depth {depth}\n"))?;
+        } else {
+            self.write_fmt(format_args!("go movetime {movetime}\n"))?;
+        }
         loop {
             let s = self.read_line()?;
             debug!("{}", s);
@@ -200,5 +217,14 @@ mod tests {
         let t = engine.bestmove().unwrap();
 
         println!("{}", t);
+    }
+
+    #[test]
+    fn test_depth() {
+        let engine = Engine::new("stockfish").unwrap().movetime(50).depth(Some(2));
+        engine.set_option("Skill Level", "-9").unwrap();
+        let t = engine.bestmove().unwrap();
+
+        assert_eq!("e2e4", t);
     }
 }
