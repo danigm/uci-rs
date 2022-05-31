@@ -115,20 +115,51 @@ impl Engine {
         Ok(())
     }
     
-    /// Returns the best move in the current position according to the engine
-    pub fn bestmove(&self) -> Result<String> {
+    fn do_move(&self) -> Result<()> {
         let movetime = self.movetime;
         if let Some(depth) = self.depth {
             self.write_fmt(format_args!("go movetime {movetime} depth {depth}\n"))?;
         } else {
             self.write_fmt(format_args!("go movetime {movetime}\n"))?;
         }
+
+        Ok(())
+    }
+
+    /// Returns the best move in the current position according to the engine
+    pub fn bestmove(&self) -> Result<String> {
+        self.do_move()?;
         loop {
             let s = self.read_line()?;
-            debug!("{}", s);
             if s.starts_with("bestmove") {
                 return Ok(s.split(" ").collect::<Vec<&str>>()[1].trim().to_string());
             }
+        }
+    }
+
+    pub fn evaluation(&self) -> Result<i32> {
+        self.do_move()?;
+        let mut info = String::from("");
+        loop {
+            let s = self.read_line()?;
+            if s.starts_with("info") {
+                info = s.clone();
+            }
+            if s.starts_with("bestmove") {
+                break;
+            }
+        }
+
+        // info depth 25 seldepth 34 multipv 1 score cp -1933 nodes 18521596 nps 853018 hashfull 990 tbhits 0 time 21713 pv d2d3
+        let parts = info.split(' ').collect::<Vec<&str>>();
+        let cp_index = match parts.iter().enumerate().find(|(_i, v)| *v == &"cp") {
+            Some((i, _v)) => i + 1,
+            None => return Err(EngineError::NotFound)
+        };
+
+        match parts[cp_index].parse::<i32>() {
+            Err(_e) => Err(EngineError::NotFound),
+            Ok(n) => Ok(n),
         }
     }
     
@@ -212,19 +243,27 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let engine = Engine::new("stockfish").unwrap().movetime(200);
+        let engine = Engine::new("./stockfish").unwrap().movetime(200);
         engine.set_option("Skill Level", "15").unwrap();
         let t = engine.bestmove().unwrap();
-
-        println!("{}", t);
     }
 
     #[test]
     fn test_depth() {
-        let engine = Engine::new("stockfish").unwrap().movetime(50).depth(Some(2));
-        engine.set_option("Skill Level", "-9").unwrap();
+        let engine = Engine::new("./stockfish").unwrap().movetime(50).depth(Some(1));
+        engine.set_option("Skill Level", "0").unwrap();
+        engine.set_position("6b1/8/1k5P/8/1P3B2/5pp1/8/4K3 b - - 0 1").unwrap();
+
         let t = engine.bestmove().unwrap();
 
-        assert_eq!("e2e4", t);
+        assert_eq!("f3f2", t);
+    }
+
+    #[test]
+    fn test_evaluation() {
+        let engine = Engine::new("./stockfish").unwrap().movetime(5000).depth(Some(40));
+        engine.set_position("6b1/8/1k5P/8/1P3B2/5pp1/8/4K3 b - - 0 1").unwrap();
+        let t = engine.evaluation().unwrap();
+        assert!(t > 6000);
     }
 }
